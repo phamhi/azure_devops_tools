@@ -5,6 +5,7 @@ import os
 import sys
 import argparse
 import logging
+from pprint import pprint, pformat
 
 from datetime import datetime
 from requests.auth import HTTPBasicAuth
@@ -23,7 +24,6 @@ str_ado_org = os.getenv('ADO_ORG')
 # export ADO_ORG=my-org
 
 str_default_ado_org = 'My-Org'  # default ADO Org
-# str_default_output_file = 'output.json'
 
 bool_ssl_verify = False
 
@@ -37,7 +37,7 @@ dict_global_headers = {
 
 # default global parameters
 dict_global_params = dict()
-dict_global_params['api-version'] = 7.0
+dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
@@ -45,19 +45,22 @@ class BadCredentialException(Exception):
     pass
 # /class
 
-def _get_agent_pool_id(str_pool_name: str) -> (int):
-    dict_params = dict_global_params.copy()
-    dict_params['poolName'] = str_pool_name
-    # dict_params['per_page'] = per_page
-    # dict_params['page'] = page
+def get_all_projects() -> str:
+    list_projects = _get_all_projects()
+    str_projects = _get_project_names(list_projects)
+    return str_projects
+#/def
 
-    # https://dev.azure.com/{organization}/_apis/distributedtask/pools?api-version=7.0
-    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/distributedtask/pools',
+def _get_all_projects() -> (list):
+    dict_params = dict_global_params.copy()
+    # dict_params['per_page'] = per_page
+
+    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/projects',
                        verify=bool_ssl_verify,
                        headers=dict_global_headers,
                        params=dict_params,
                        auth=dict_global_basic_auth)
-    logger.debug(f'pool_name="{str_pool_name}",res.status_code={res.status_code}')
+    logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
         raise BadCredentialException()
@@ -65,55 +68,89 @@ def _get_agent_pool_id(str_pool_name: str) -> (int):
 
     if res.status_code != 200:
         logger.error(res.text)
-        return False
+        return []
     # /fi
 
     dict_data = json.loads(res.text)
-    if dict_data['count'] == 0:
-        logger.info(f'pool_name="{str_pool_name}" NOT found')
-        return 0
-    # /fi
-
-    for dict_agent in dict_data['value']:
-        int_id = int(dict_agent['id'])
-        logger.info(f'pool_name="{str_pool_name}" found with id={int_id}')
-        return int_id
-    # /for
-
-    return 0
+    return dict_data['value']
 # /def
 
-def _delete_agent_pool_id(str_pool_name: str, int_pool_id: int) -> (bool):
-    dict_params = dict_global_params.copy()
-    dict_params['poolId'] = int_pool_id
+def _get_project_names(list_projects: list) -> (str):
+    str_projects = ''
+    for project in list_projects:
+        str_projects += f'{project["name"]}\n'
+    # /for
+    return str_projects.strip()
+# /def
 
-    # https://dev.azure.com/{organization}/_apis/distributedtask/pools?api-version=7.0
-    res = requests.delete(f'https://dev.azure.com/{str_ado_org}/_apis/distributedtask/pools',
-                          verify=bool_ssl_verify,
-                          headers=dict_global_headers,
-                          params=dict_params,
-                          auth=dict_global_basic_auth)
-    logger.debug(f'pool_id="{int_pool_id}",res.status_code={res.status_code}')
+def _get_all_users(int_project_id: int) -> (list):
+    dict_params = dict_global_params.copy()
+    # dict_params['per_page'] = per_page
+
+    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{int_project_id}',
+                       verify=bool_ssl_verify,
+                       headers=dict_global_headers,
+                       params=dict_params,
+                       auth=dict_global_basic_auth)
+    logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
         raise BadCredentialException()
     # /fi
 
-    if res.status_code != 204:
+    if res.status_code != 200:
         logger.error(res.text)
+        return []
+    # /fi
+
+    list_users = json.loads(res.text)['value']
+    logger.debug(f'found {len(list_users)} user(s)')
+
+    return list_users
+# /def
+
+def _get_all_user_ids(dict_users: dict) -> (list):
+    list_user_ids = []
+    for dict_user in dict_users:
+        str_id = dict_user['identity']['id']
+        str_display_name = dict_user['identity']['displayName']
+        logger.debug(f'adding "{str_id}" "{str_display_name}"')
+        list_user_ids.append(str_id)
+    # /for
+    return list_user_ids
+# /def
+
+def _put_permission(int_project_id: int, str_role: str, str_user_id: id) -> (bool):
+    dict_params = dict_global_params.copy()
+    # dict_params['per_page'] = per_page
+
+    dict_headers = dict_global_headers.copy()
+    dict_headers['content-type'] = 'application/json; charset=utf-8; api-version=7.1-preview.1'
+
+    list_body = []
+    list_body.append(dict(userId=str_user_id, roleName=str_role))
+
+    str_body_json = json.dumps(list_body)
+
+    res = requests.put(f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{int_project_id}',
+                       verify=bool_ssl_verify,
+                       headers=dict_headers,
+                       params=dict_params,
+                       auth=dict_global_basic_auth,
+                       data=str_body_json)
+    logger.debug(f'res.status_code={res.status_code}')
+
+    if res.status_code == 203:
+        raise BadCredentialException()
+    # /fi
+
+    if res.status_code != 200:
+        logger.error(f'failed to update {str_user_id}:{res.text}')
         return False
     # /fi
 
-    logger.info(f'pool_name="{str_pool_name}",pool_id="{int_pool_id}" deleted successfully')
+    logger.debug(f'successfully updated role to "{str_role}" for user "{str_user_id}"')
     return True
-# /def
-
-
-def delete_agent_pool_name(str_pool_name: str):
-    int_pool_id = _get_agent_pool_id(str_pool_name)
-    if int_pool_id:
-        _delete_agent_pool_id(str_pool_name, int_pool_id)
-    # /if
 # /def
 
 def parse_args() -> argparse.ArgumentParser:
@@ -135,7 +172,6 @@ def parse_args() -> argparse.ArgumentParser:
         const=logging.ERROR,
     )
 
-    parser.add_argument('pool_names', nargs='+')
 
     args = parser.parse_args()
     return args
@@ -148,7 +184,6 @@ if __name__ == '__main__':
     args = parse_args()
 
     int_verbosity = args.verbosity
-    list_pool_names = args.pool_names
 
     logger = logging.getLogger(__name__)
     c_handler = logging.StreamHandler()
@@ -159,8 +194,6 @@ if __name__ == '__main__':
     logger.setLevel(int_verbosity)
 
     logger.debug(f'verbosity "level"="{logging.getLevelName(int_verbosity)}"')
-    logger.debug(f'pool_names="{list_pool_names}"')
-
     if not str_ado_token:
         logger.error('environment variable "ADO_TOKEN" is not set or empty.')
         sys.exit(1)
@@ -169,9 +202,9 @@ if __name__ == '__main__':
     if not str_ado_org:
         str_ado_org = str_default_ado_org
     # /if
-    logger.debug(f'ado org:"{str_ado_org}"')
+    logger.debug(f'org="{str_ado_org}"')
 
-    for str_pool_name in list_pool_names:
-        delete_agent_pool_name(str_pool_name)
-    # /for
+    str_projects = get_all_projects()
+    print(str_projects)
+    # /if
 # /if
