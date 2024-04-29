@@ -5,8 +5,10 @@ import sys
 import argparse
 import logging
 
+from datetime import datetime
 from requests.auth import HTTPBasicAuth
 from urllib3.exceptions import InsecureRequestWarning
+# from f import *
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
@@ -36,23 +38,24 @@ dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-def delete_agent_queue_name(str_project_name: str, str_queue_name: str) -> (bool):
+def set_permission(str_project: str, str_role: str) -> (bool):
     list_projects =_get_all_projects()
-    str_project_id = _get_project_id(str_project_name, list_projects)
-    logger.debug(f'project id is "{str_project_id}"')
 
+    str_project_id = _get_project_id(str_project, list_projects)
+    logger.debug(f'project id is "{str_project_id}"')
     if not str_project_id:
-        logger.error(f'cannot find project "{str_project_name}"')
+        logger.error(f'cannot find project "{str_project}"')
         return False
     # /if
 
-    int_queue_id = _get_agent_queue_id(str_project_name, str_queue_name)
+    list_users = _get_all_users(str_project_id)
+    list_ids = _get_all_user_ids(list_users)
 
-    if int_queue_id:
-        _delete_agent_queue_id(str_project_id, str_pool_name, int_queue_id)
-    # /if
+    for str_id in list_ids:
+        _put_permission(str_project_id, str_role, str_id)
+    # /for
     return True
-# /def
+#/def
 
 def _get_all_projects() -> (list):
     dict_params = dict_global_params.copy()
@@ -99,11 +102,10 @@ def _get_project_id(str_project_name: str, list_projects: list) -> (str):
     return ""
 # /def
 
-def _get_agent_queue_id(str_project_name: str, str_queue_name: str) -> (int):
+def _get_all_users(str_project_id: str) -> (list):
     dict_params = dict_global_params.copy()
-    dict_params['queueNames'] = str_queue_name
 
-    str_rest_url = f'https://dev.azure.com/{str_ado_org}/{str_project_name}/_apis/distributedtask/queues'
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}'
     logger.debug(f'action="get",rest_url="{str_rest_url}"')
 
     res = requests.get(str_rest_url,
@@ -111,72 +113,74 @@ def _get_agent_queue_id(str_project_name: str, str_queue_name: str) -> (int):
                        headers=dict_global_headers,
                        params=dict_params,
                        auth=dict_global_basic_auth)
-    logger.debug(f'queue_name="{str_queue_name}",res.status_code={res.status_code}')
+    logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        logger.error(f'rejected token')
-        return False
+        logger.error(f'rejected provided token')
+        return []
     # /fi
 
     if res.status_code == 401:
         logger.error(f'unauthorized access to "{str_ado_org}"')
-        return False
+        return []
     # /fi
 
-    if res.status_code == 404:
-        logger.error(f'agent pool "{str_pool_name}" cannot be found in org "{str_ado_org}"')
+    if res.status_code != 200:
+        logger.error(f'something went wrong; check the res.status_code')
+        return []
+    # /fi
+
+    dict_users = json.loads(res.text)['value']
+    logger.debug(f'found {len(dict_users)} user(s)')
+
+    return dict_users
+# /def
+
+def _get_all_user_ids(list_users: list) -> (list):
+    list_user_ids = []
+    for dict_user in list_users:
+        str_id = dict_user['identity']['id']
+        str_display_name = dict_user['identity']['displayName']
+        logger.debug(f'adding "{str_id}" "{str_display_name}"')
+        list_user_ids.append(str_id)
+    # /for
+    return list_user_ids
+# /def
+
+def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (bool):
+    dict_params = dict_global_params.copy()
+
+    dict_headers = dict_global_headers.copy()
+    dict_headers['content-type'] = 'application/json; charset=utf-8; api-version=7.1-preview.1'
+
+    list_body = []
+    list_body.append(dict(userId=str_user_id, roleName=str_role))
+
+    str_body_json = json.dumps(list_body)
+
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}'
+    logger.debug(f'action="put",rest_url="{str_rest_url}"')
+
+    res = requests.put(str_rest_url,
+                       verify=bool_ssl_verify,
+                       headers=dict_headers,
+                       params=dict_params,
+                       auth=dict_global_basic_auth,
+                       data=str_body_json)
+    logger.debug(f'res.status_code={res.status_code}')
+
+    if res.status_code == 203:
+        logger.error(f'rejected provided token')
         return False
     # /fi
 
     if res.status_code != 200:
-        logger.error(f'something went wrong; check res.status_code')
-        return 0
-    # /fi
-
-    dict_data = json.loads(res.text)
-    if dict_data['count'] == 0:
-        logger.info(f'queue_name="{str_pool_name}" NOT found')
-        return 0
-    # /fi
-
-    for dict_agent in dict_data['value']:
-        int_id = int(dict_agent['id'])
-        logger.info(f'queue_name="{str_pool_name}" found with id={int_id}')
-        return int_id
-    # /for
-
-    return 0
-# /def
-
-def _delete_agent_queue_id(str_project_id: str, str_queue_name: str, int_queue_id: int) -> (bool):
-    dict_params = dict_global_params.copy()
-
-    str_rest_url = f'https://dev.azure.com/{str_ado_org}/{str_project_id}/_apis/distributedtask/queues/{int_queue_id}'
-    logger.debug(f'action="delete",rest_url="{str_rest_url}"')
-
-    res = requests.delete(str_rest_url,
-                          verify=bool_ssl_verify,
-                          headers=dict_global_headers,
-                          params=dict_params,
-                          auth=dict_global_basic_auth)
-    logger.debug(f'queue_id="{int_queue_id}",res.status_code={res.status_code}')
-
-    if res.status_code == 203:
-        logger.error(f'rejected token')
+        logger.error(f'failed to update {str_user_id}:{res.text}')
         return False
     # /fi
 
-    if res.status_code == 401:
-        logger.error(f'unauthorized access to "{str_ado_org}"')
-        return False
-    # /fi
+    logger.debug(f'successfully updated role to "{str_role}" for user "{str_user_id}"')
 
-    if res.status_code != 204:
-        logger.error(f'something went wrong; check res.status_code')
-        return False
-    # /fi
-
-    logger.info(f'queue_name="{str_queue_name}",queue_id="{int_queue_id}" deleted successfully')
     return True
 # /def
 
@@ -184,7 +188,7 @@ def _delete_agent_queue_id(str_project_id: str, str_queue_name: str, int_queue_i
 
 def parse_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Remove an ADO agent queue (environments ADO_TOKEN and ADO_ORG must be set)'
+        description='Update an agent queue\'s permission (environments ADO_TOKEN and ADO_ORG must be set)'
     )
 
     parser.add_argument(
@@ -209,7 +213,20 @@ def parse_args() -> argparse.ArgumentParser:
         default='default',
     )
 
-    parser.add_argument('agent_queue_names', nargs='+')
+    parser.add_argument(
+        '--all-users',
+        required=True,
+        help='Target this user(s)',
+        action='store_const', dest='all_users',
+        const=True, default=False,
+    )
+
+    parser.add_argument(
+        '-r', '--role',
+        required=True,
+        help='Role to be set',
+        dest='role'
+    )
 
     args = parser.parse_args()
     return args
@@ -223,7 +240,8 @@ if __name__ == '__main__':
 
     int_verbosity = args.verbosity
     str_project = args.project.strip()
-    list_agent_queue_names = args.agent_queue_names
+    bool_all_users = args.all_users
+    str_role = args.role.capitalize()
 
     logger = logging.getLogger(__name__)
     c_handler = logging.StreamHandler()
@@ -233,6 +251,7 @@ if __name__ == '__main__':
     # set logging verbosity
     logger.setLevel(int_verbosity)
 
+    logger.debug(f'verbosity "level"="{logging.getLevelName(int_verbosity)}"')
     if not str_ado_token:
         logger.error('environment variable "ADO_TOKEN" is not set or empty.')
         sys.exit(1)
@@ -245,11 +264,11 @@ if __name__ == '__main__':
     # /if
     logger.debug(f'org="{str_ado_org}"')
 
-    logger.debug(f'verbosity "level"="{logging.getLevelName(int_verbosity)}"')
     logger.debug(f'project="{str_project}"')
-    logger.debug(f'agent_queue_names="{list_agent_queue_names}"')
+    logger.debug(f'all users="{bool_all_users}"')
+    logger.debug(f'role to be set="{str_role}"')
 
-    for str_pool_name in set(list_agent_queue_names):
-        delete_agent_queue_name(str_project, str_pool_name)
-    # /for
+    if set_permission(str_project, str_role):
+        logger.info(f'completed updating permission on project "{str_project}"; check the logs for any errors')
+    # /if
 # /if
