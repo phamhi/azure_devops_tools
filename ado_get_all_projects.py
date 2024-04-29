@@ -1,38 +1,34 @@
 import requests
 import json
-import time
 import os
 import sys
 import argparse
 import logging
-from pprint import pprint, pformat
 
-from datetime import datetime
 from requests.auth import HTTPBasicAuth
 from urllib3.exceptions import InsecureRequestWarning
-# from f import *
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 # ----------------------------------------------------------------------------------------------------------------------
 
 # get token and org from env variables
+
 str_ado_token = os.getenv('ADO_TOKEN')
 # export ADO_TOKEN=xyz
 
 str_ado_org = os.getenv('ADO_ORG')
 # export ADO_ORG=my-org
 
-str_default_ado_org = 'My-Org'  # default ADO Org
+# str_default_ado_org = 'My-Org'  # default ADO Org
 
+# enable SSL vertificate verification
 bool_ssl_verify = False
 
 dict_global_basic_auth = HTTPBasicAuth('', str_ado_token)
 
 dict_global_headers = {
-    #     'Accept': 'application/vnd.github+json',
-    #     'X-GitHub-Api-Version': '2022-11-28',
-    #     'Authorization': f'Bearer {str_github_token}',
+    # 'Accept': 'application/vnd.github+json',
 }
 
 # default global parameters
@@ -63,11 +59,17 @@ def _get_all_projects() -> (list):
     logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'rejected provided token')
+        return []
+    # /fi
+
+    if res.status_code == 401:
+        logger.error(f'unauthorized access to "{str_ado_org}"')
+        return []
     # /fi
 
     if res.status_code != 200:
-        logger.error(res.text)
+        logger.error(f'something went wrong; check the res.status_code')
         return []
     # /fi
 
@@ -95,7 +97,8 @@ def _get_all_users(int_project_id: int) -> (list):
     logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'rejected provided token')
+        return []
     # /fi
 
     if res.status_code != 200:
@@ -141,7 +144,8 @@ def _put_permission(int_project_id: int, str_role: str, str_user_id: id) -> (boo
     logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'rejected provided token')
+        return False
     # /fi
 
     if res.status_code != 200:
@@ -153,9 +157,11 @@ def _put_permission(int_project_id: int, str_role: str, str_user_id: id) -> (boo
     return True
 # /def
 
+# ----------------------------------------------------------------------------------------------------------------------
+
 def parse_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Create an Archive BitBucket Project'
+        description='List all ADO projects (environments ADO_TOKEN and ADO_ORG must be set)'
     )
 
     parser.add_argument(
@@ -200,7 +206,9 @@ if __name__ == '__main__':
     # /if
 
     if not str_ado_org:
-        str_ado_org = str_default_ado_org
+        # str_ado_org = str_default_ado_org
+        logger.error('environment variable "ADO_ORG" is not set or empty.')
+        sys.exit(1)
     # /if
     logger.debug(f'org="{str_ado_org}"')
 

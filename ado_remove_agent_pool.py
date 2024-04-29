@@ -1,15 +1,12 @@
 import requests
 import json
-import time
 import os
 import sys
 import argparse
 import logging
 
-from datetime import datetime
 from requests.auth import HTTPBasicAuth
 from urllib3.exceptions import InsecureRequestWarning
-# from f import *
 
 requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
@@ -22,22 +19,20 @@ str_ado_token = os.getenv('ADO_TOKEN')
 str_ado_org = os.getenv('ADO_ORG')
 # export ADO_ORG=my-org
 
-str_default_ado_org = 'My-Org'  # default ADO Org
-# str_default_output_file = 'output.json'
+# str_default_ado_org = 'My-Org'  # default ADO Org
 
+# enable SSL vertificate verification
 bool_ssl_verify = False
 
 dict_global_basic_auth = HTTPBasicAuth('', str_ado_token)
 
 dict_global_headers = {
-    #     'Accept': 'application/vnd.github+json',
-    #     'X-GitHub-Api-Version': '2022-11-28',
-    #     'Authorization': f'Bearer {str_github_token}',
+    # 'Accept': 'application/vnd.github+json',
 }
 
 # default global parameters
 dict_global_params = dict()
-dict_global_params['api-version'] = 7.0
+dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
@@ -60,12 +55,23 @@ def _get_agent_pool_id(str_pool_name: str) -> (int):
     logger.debug(f'pool_name="{str_pool_name}",res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'provided token rejected')
+        return False
+    # /fi
+
+    if res.status_code == 401:
+        logger.error(f'unauthorized access to "{str_ado_org}"')
+        return False
+    # /fi
+
+    if res.status_code == 404:
+        logger.error(f'agent pool "{str_pool_name}" cannot be found in org "{str_ado_org}"')
+        return False
     # /fi
 
     if res.status_code != 200:
-        logger.error(res.text)
-        return False
+        logger.error(f'something went wrong; check the res.status_code')
+        return 0
     # /fi
 
     dict_data = json.loads(res.text)
@@ -96,7 +102,13 @@ def _delete_agent_pool_id(str_pool_name: str, int_pool_id: int) -> (bool):
     logger.debug(f'pool_id="{int_pool_id}",res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'rejected provided token')
+        return False
+    # /fi
+
+    if res.status_code == 401:
+        logger.error(f'unauthorized access to "{str_ado_org}"')
+        return False
     # /fi
 
     if res.status_code != 204:
@@ -116,9 +128,11 @@ def delete_agent_pool_name(str_pool_name: str):
     # /if
 # /def
 
+# ----------------------------------------------------------------------------------------------------------------------
+
 def parse_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Create an Archive BitBucket Project'
+        description='Remove an ADO agent pool (environments ADO_TOKEN and ADO_ORG must be set)'
     )
 
     parser.add_argument(
@@ -167,11 +181,13 @@ if __name__ == '__main__':
     # /if
 
     if not str_ado_org:
-        str_ado_org = str_default_ado_org
+        # str_ado_org = str_default_ado_org
+        logger.error('environment variable "ADO_ORG" is not set or empty.')
+        sys.exit(1)
     # /if
-    logger.debug(f'ado org:"{str_ado_org}"')
+    logger.debug(f'org="{str_ado_org}"')
 
-    for str_pool_name in list_pool_names:
+    for str_pool_name in set(list_pool_names):
         delete_agent_pool_name(str_pool_name)
     # /for
 # /if
