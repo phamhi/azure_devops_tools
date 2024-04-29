@@ -38,10 +38,6 @@ dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-class BadCredentialException(Exception):
-    pass
-# /class
-
 def set_permission(str_project: str, str_role: str) -> (bool):
     list_projects =_get_all_projects()
 
@@ -63,9 +59,11 @@ def set_permission(str_project: str, str_role: str) -> (bool):
 
 def _get_all_projects() -> (list):
     dict_params = dict_global_params.copy()
-    # dict_params['per_page'] = per_page
 
-    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/projects',
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/projects'
+    logger.debug(f'action="get",rest_url="{str_rest_url}"')
+
+    res = requests.get(str_rest_url,
                        verify=bool_ssl_verify,
                        headers=dict_global_headers,
                        params=dict_params,
@@ -73,7 +71,7 @@ def _get_all_projects() -> (list):
     logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        logger.error(f'rejected provided token')
+        logger.error(f'rejected token')
         return []
     # /fi
 
@@ -83,7 +81,7 @@ def _get_all_projects() -> (list):
     # /fi
 
     if res.status_code != 200:
-        logger.error(f'something went wrong; check the res.status_code')
+        logger.error(f'something went wrong; check res.status_code')
         return []
     # /fi
 
@@ -106,9 +104,11 @@ def _get_project_id(str_project_name: str, list_projects: list) -> (str):
 
 def _get_all_users(str_project_id: str) -> (list):
     dict_params = dict_global_params.copy()
-    # dict_params['per_page'] = per_page
 
-    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}',
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}'
+    logger.debug(f'action="get",rest_url="{str_rest_url}"')
+
+    res = requests.get(str_rest_url,
                        verify=bool_ssl_verify,
                        headers=dict_global_headers,
                        params=dict_params,
@@ -149,7 +149,6 @@ def _get_all_user_ids(list_users: list) -> (list):
 
 def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (bool):
     dict_params = dict_global_params.copy()
-    # dict_params['per_page'] = per_page
 
     dict_headers = dict_global_headers.copy()
     dict_headers['content-type'] = 'application/json; charset=utf-8; api-version=7.1-preview.1'
@@ -159,7 +158,10 @@ def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (boo
 
     str_body_json = json.dumps(list_body)
 
-    res = requests.put(f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}',
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/securityroles/scopes/distributedtask.globalagentqueuerole/roleassignments/resources/{str_project_id}'
+    logger.debug(f'action="put",rest_url="{str_rest_url}"')
+
+    res = requests.put(str_rest_url,
                        verify=bool_ssl_verify,
                        headers=dict_headers,
                        params=dict_params,
@@ -168,7 +170,8 @@ def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (boo
     logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        raise BadCredentialException()
+        logger.error(f'rejected provided token')
+        return False
     # /fi
 
     if res.status_code != 200:
@@ -266,6 +269,6 @@ if __name__ == '__main__':
     logger.debug(f'role to be set="{str_role}"')
 
     if set_permission(str_project, str_role):
-        logger.info(f'completed updating permission on project "{str_project}";check the logs for error')
+        logger.info(f'completed updating permission on project "{str_project}"; check the logs for any errors')
     # /if
 # /if

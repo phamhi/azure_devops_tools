@@ -36,26 +36,85 @@ dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-class BadCredentialException(Exception):
-    pass
-# /class
+def delete_agent_queue_name(str_project_name: str, str_queue_name: str) -> (bool):
+    list_projects =_get_all_projects()
+    str_project_id = _get_project_id(str_project_name, list_projects)
+    logger.debug(f'project id is "{str_project_id}"')
 
-def _get_agent_pool_id(str_pool_name: str) -> (int):
+    if not str_project_id:
+        logger.error(f'cannot find project "{str_project_name}"')
+        return False
+    # /if
+
+    int_queue_id = _get_agent_queue_id(str_project_name, str_queue_name)
+
+    if int_queue_id:
+        _delete_agent_queue_id(str_project_id, str_pool_name, int_queue_id)
+    # /if
+    return True
+# /def
+
+def _get_all_projects() -> (list):
     dict_params = dict_global_params.copy()
-    dict_params['poolName'] = str_pool_name
-    # dict_params['per_page'] = per_page
-    # dict_params['page'] = page
 
-    # https://dev.azure.com/{organization}/_apis/distributedtask/pools?api-version=7.0
-    res = requests.get(f'https://dev.azure.com/{str_ado_org}/_apis/distributedtask/pools',
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/_apis/projects'
+    logger.debug(f'action="get",rest_url="{str_rest_url}"')
+
+    res = requests.get(str_rest_url,
                        verify=bool_ssl_verify,
                        headers=dict_global_headers,
                        params=dict_params,
                        auth=dict_global_basic_auth)
-    logger.debug(f'pool_name="{str_pool_name}",res.status_code={res.status_code}')
+    logger.debug(f'res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        logger.error(f'provided token rejected')
+        logger.error(f'rejected token')
+        return []
+    # /fi
+
+    if res.status_code == 401:
+        logger.error(f'unauthorized access to "{str_ado_org}"')
+        return []
+    # /fi
+
+    if res.status_code != 200:
+        logger.error(f'something went wrong; check res.status_code')
+        return []
+    # /fi
+
+    dict_data = json.loads(res.text)
+    list_projects = dict_data['value']
+    return list_projects
+# /def
+
+def _get_project_id(str_project_name: str, list_projects: list) -> (str):
+    for dict_project in list_projects:
+        logger.debug(f'comparing "{dict_project["name"].lower()}" against "{str_project_name.lower()}"')
+        if dict_project['name'].lower() == str_project_name.lower():
+            str_id = dict_project['id']
+            logger.debug(f'found project "{str_project_name}" with id: "{str_id}"')
+            return str_id
+        # /if
+    # /for
+    return ""
+# /def
+
+def _get_agent_queue_id(str_project_name: str, str_queue_name: str) -> (int):
+    dict_params = dict_global_params.copy()
+    dict_params['queueNames'] = str_queue_name
+
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/{str_project_name}/_apis/distributedtask/queues'
+    logger.debug(f'action="get",rest_url="{str_rest_url}"')
+
+    res = requests.get(str_rest_url,
+                       verify=bool_ssl_verify,
+                       headers=dict_global_headers,
+                       params=dict_params,
+                       auth=dict_global_basic_auth)
+    logger.debug(f'queue_name="{str_queue_name}",res.status_code={res.status_code}')
+
+    if res.status_code == 203:
+        logger.error(f'rejected token')
         return False
     # /fi
 
@@ -70,39 +129,40 @@ def _get_agent_pool_id(str_pool_name: str) -> (int):
     # /fi
 
     if res.status_code != 200:
-        logger.error(f'something went wrong; check the res.status_code')
+        logger.error(f'something went wrong; check res.status_code')
         return 0
     # /fi
 
     dict_data = json.loads(res.text)
     if dict_data['count'] == 0:
-        logger.info(f'pool_name="{str_pool_name}" NOT found')
+        logger.info(f'queue_name="{str_pool_name}" NOT found')
         return 0
     # /fi
 
     for dict_agent in dict_data['value']:
         int_id = int(dict_agent['id'])
-        logger.info(f'pool_name="{str_pool_name}" found with id={int_id}')
+        logger.info(f'queue_name="{str_pool_name}" found with id={int_id}')
         return int_id
     # /for
 
     return 0
 # /def
 
-def _delete_agent_pool_id(str_pool_name: str, int_pool_id: int) -> (bool):
+def _delete_agent_queue_id(str_project_id: str, str_queue_name: str, int_queue_id: int) -> (bool):
     dict_params = dict_global_params.copy()
-    dict_params['poolId'] = int_pool_id
 
-    # https://dev.azure.com/{organization}/_apis/distributedtask/pools?api-version=7.0
-    res = requests.delete(f'https://dev.azure.com/{str_ado_org}/_apis/distributedtask/pools',
+    str_rest_url = f'https://dev.azure.com/{str_ado_org}/{str_project_id}/_apis/distributedtask/queues/{int_queue_id}'
+    logger.debug(f'action="delete",rest_url="{str_rest_url}"')
+
+    res = requests.delete(str_rest_url,
                           verify=bool_ssl_verify,
                           headers=dict_global_headers,
                           params=dict_params,
                           auth=dict_global_basic_auth)
-    logger.debug(f'pool_id="{int_pool_id}",res.status_code={res.status_code}')
+    logger.debug(f'queue_id="{int_queue_id}",res.status_code={res.status_code}')
 
     if res.status_code == 203:
-        logger.error(f'rejected provided token')
+        logger.error(f'rejected token')
         return False
     # /fi
 
@@ -112,27 +172,19 @@ def _delete_agent_pool_id(str_pool_name: str, int_pool_id: int) -> (bool):
     # /fi
 
     if res.status_code != 204:
-        logger.error(res.text)
+        logger.error(f'something went wrong; check res.status_code')
         return False
     # /fi
 
-    logger.info(f'pool_name="{str_pool_name}",pool_id="{int_pool_id}" deleted successfully')
+    logger.info(f'queue_name="{str_queue_name}",queue_id="{int_queue_id}" deleted successfully')
     return True
-# /def
-
-
-def delete_agent_pool_name(str_pool_name: str):
-    int_pool_id = _get_agent_pool_id(str_pool_name)
-    if int_pool_id:
-        _delete_agent_pool_id(str_pool_name, int_pool_id)
-    # /if
 # /def
 
 # ----------------------------------------------------------------------------------------------------------------------
 
 def parse_args() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description='Remove an ADO agent pool (environments ADO_TOKEN and ADO_ORG must be set)'
+        description='Remove an ADO agent queue (environments ADO_TOKEN and ADO_ORG must be set)'
     )
 
     parser.add_argument(
@@ -149,7 +201,15 @@ def parse_args() -> argparse.ArgumentParser:
         const=logging.ERROR,
     )
 
-    parser.add_argument('pool_names', nargs='+')
+    parser.add_argument(
+        '-p', '--project',
+        required=True,
+        help='Use this project name',
+        dest='project',
+        default='default',
+    )
+
+    parser.add_argument('agent_queue_names', nargs='+')
 
     args = parser.parse_args()
     return args
@@ -162,7 +222,8 @@ if __name__ == '__main__':
     args = parse_args()
 
     int_verbosity = args.verbosity
-    list_pool_names = args.pool_names
+    str_project = args.project.strip()
+    list_agent_queue_names = args.agent_queue_names
 
     logger = logging.getLogger(__name__)
     c_handler = logging.StreamHandler()
@@ -171,9 +232,6 @@ if __name__ == '__main__':
 
     # set logging verbosity
     logger.setLevel(int_verbosity)
-
-    logger.debug(f'verbosity "level"="{logging.getLevelName(int_verbosity)}"')
-    logger.debug(f'pool_names="{list_pool_names}"')
 
     if not str_ado_token:
         logger.error('environment variable "ADO_TOKEN" is not set or empty.')
@@ -187,7 +245,11 @@ if __name__ == '__main__':
     # /if
     logger.debug(f'org="{str_ado_org}"')
 
-    for str_pool_name in set(list_pool_names):
-        delete_agent_pool_name(str_pool_name)
+    logger.debug(f'verbosity "level"="{logging.getLevelName(int_verbosity)}"')
+    logger.debug(f'project="{str_project}"')
+    logger.debug(f'agent_queue_names="{list_agent_queue_names}"')
+
+    for str_pool_name in set(list_agent_queue_names):
+        delete_agent_queue_name(str_project, str_pool_name)
     # /for
 # /if
