@@ -48,11 +48,11 @@ def set_permission(str_project: str, str_role: str) -> (bool):
         return False
     # /if
 
-    list_users = _get_all_users(str_project_id)
-    list_ids = _get_all_user_ids(list_users)
+    list_user_names = _get_all_users(str_project_id)
+    list_user_ids = _get_all_user_ids(list_user_names)
 
-    for str_id in list_ids:
-        _put_permission(str_project_id, str_role, str_id)
+    for str_user, str_id in zip(list_user_names, list_user_ids):
+        _put_permission(str_project_id, str_role, str_id, str_user['identity']['displayName'])
     # /for
     return True
 #/def
@@ -147,7 +147,7 @@ def _get_all_user_ids(list_users: list) -> (list):
     return list_user_ids
 # /def
 
-def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (bool):
+def _put_permission(str_project_id: str, str_role: str, str_user_id: id, str_user_name:id) -> (bool):
     dict_params = dict_global_params.copy()
 
     dict_headers = dict_global_headers.copy()
@@ -175,11 +175,11 @@ def _put_permission(str_project_id: str, str_role: str, str_user_id: id) -> (boo
     # /fi
 
     if res.status_code != 200:
-        logger.error(f'failed to update {str_user_id}:{res.text}')
+        logger.error(f'failed to update {str_user_id}')
         return False
     # /fi
 
-    logger.debug(f'successfully updated role to "{str_role}" for user "{str_user_id}"')
+    logger.info(f'successfully updated role to "{str_role}" for user "{str_user_name}"')
 
     return True
 # /def
@@ -224,7 +224,7 @@ def parse_args() -> argparse.ArgumentParser:
     parser.add_argument(
         '-r', '--role',
         required=True,
-        help='Role to be set',
+        help='Role to be set (e.g. reader, user creator, administrator)',
         dest='role'
     )
 
