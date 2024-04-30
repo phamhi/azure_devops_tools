@@ -215,6 +215,11 @@ def parse_args() -> argparse.ArgumentParser:
     return args
 # /def
 
+def remove_duplicates(list_input:list) -> (list):
+    from collections import OrderedDict
+    return list(OrderedDict.fromkeys(list_input))
+# /def
+
 # ----------------------------------------------------------------------------------------------------------------------
 
 if __name__ == '__main__':
@@ -223,7 +228,7 @@ if __name__ == '__main__':
 
     int_verbosity = args.verbosity
     str_project = args.project.strip()
-    list_agent_queue_names = args.agent_queue_names
+    list_agent_queue_names = remove_duplicates(args.agent_queue_names)
 
     logger = logging.getLogger(__name__)
     c_handler = logging.StreamHandler()
@@ -249,7 +254,7 @@ if __name__ == '__main__':
     logger.debug(f'project="{str_project}"')
     logger.debug(f'agent_queue_names="{list_agent_queue_names}"')
 
-    for str_pool_name in set(list_agent_queue_names):
+    for str_pool_name in list_agent_queue_names:
         delete_agent_queue_name(str_project, str_pool_name)
     # /for
 # /if
