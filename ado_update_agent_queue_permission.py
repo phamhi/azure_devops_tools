@@ -4,6 +4,7 @@ import os
 import sys
 import argparse
 import logging
+import pprint
 
 from datetime import datetime
 from requests.auth import HTTPBasicAuth
@@ -38,7 +39,7 @@ dict_global_params['api-version'] = '7.1-preview.1'
 
 # ----------------------------------------------------------------------------------------------------------------------
 
-def set_permission(str_project: str, str_role: str) -> (bool):
+def set_permission(str_project: str, str_role: str, str_ignore_user_name: str) -> (bool):
     list_projects =_get_all_projects()
 
     str_project_id = _get_project_id(str_project, list_projects)
@@ -49,6 +50,8 @@ def set_permission(str_project: str, str_role: str) -> (bool):
     # /if
 
     list_user_names = _get_all_users(str_project_id)
+    # logger.debug(f'list_user_names={pprint.pformat(list_user_names)}')
+    list_user_names = _remove_except_user(list_user_names, str_ignore_user_name)
     list_user_ids = _get_all_user_ids(list_user_names)
 
     for str_user, str_id in zip(list_user_names, list_user_ids):
@@ -56,6 +59,24 @@ def set_permission(str_project: str, str_role: str) -> (bool):
     # /for
     return True
 #/def
+
+def _remove_except_user(list_user_names: list, str_ignore_user_name: str) -> (list):
+    if not str_ignore_user_name:
+        logger.debug(f'str_except_user_name is empty')
+        return list_user_names
+    # /if
+
+    list_ignored_removed = []
+    for dict_user_name in list_user_names:
+        # logger.debug(f'comparing "{str_ignore_user_name.lower()}" against {dict_user_name["identity"]["displayName"].lower()}')
+        if str_ignore_user_name.lower() in dict_user_name['identity']['displayName'].lower():
+            logger.debug(f'removed ignored user "{str_ignore_user_name}" from the list')
+            continue
+        # /if
+        list_ignored_removed.append(dict_user_name)
+    # /for
+    return list_ignored_removed
+# /def
 
 def _get_all_projects() -> (list):
     dict_params = dict_global_params.copy()
@@ -209,8 +230,7 @@ def parse_args() -> argparse.ArgumentParser:
         '-p', '--project',
         required=True,
         help='Use this project name',
-        dest='project',
-        default='default',
+        dest='project'
     )
 
     parser.add_argument(
@@ -219,6 +239,14 @@ def parse_args() -> argparse.ArgumentParser:
         help='Target this user(s)',
         action='store_const', dest='all_users',
         const=True, default=False,
+    )
+
+    parser.add_argument(
+        '--ignore-user-name',
+        # required=True,
+        help='Do not update this user',
+        dest='ignore_user_name',
+        default='Project Valid Users',
     )
 
     parser.add_argument(
@@ -242,6 +270,7 @@ if __name__ == '__main__':
     str_project = args.project.strip()
     bool_all_users = args.all_users
     str_role = args.role.capitalize()
+    str_ignore_user_name = args.ignore_user_name.lower()
 
     logger = logging.getLogger(__name__)
     c_handler = logging.StreamHandler()
@@ -267,8 +296,9 @@ if __name__ == '__main__':
     logger.debug(f'project="{str_project}"')
     logger.debug(f'all users="{bool_all_users}"')
     logger.debug(f'role to be set="{str_role}"')
+    logger.debug(f'user to ignore="{str_ignore_user_name}"')
 
-    if set_permission(str_project, str_role):
+    if set_permission(str_project, str_role, str_ignore_user_name):
         logger.info(f'completed updating permission on project "{str_project}"; check the logs for any errors')
     # /if
 # /if
