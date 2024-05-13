@@ -51,7 +51,7 @@ def set_permission(str_project: str, str_role: str, str_ignore_user_name: str) -
 
     list_user_names = _get_all_users(str_project_id)
     # logger.debug(f'list_user_names={pprint.pformat(list_user_names)}')
-    list_user_names = _remove_except_user(list_user_names, str_ignore_user_name)
+    list_user_names = _remove_ignore_user(list_user_names, str_ignore_user_name)
     list_user_ids = _get_all_user_ids(list_user_names)
 
     for str_user, str_id in zip(list_user_names, list_user_ids):
@@ -60,7 +60,7 @@ def set_permission(str_project: str, str_role: str, str_ignore_user_name: str) -
     return True
 #/def
 
-def _remove_except_user(list_user_names: list, str_ignore_user_name: str) -> (list):
+def _remove_ignore_user(list_user_names: list, str_ignore_user_name: str) -> (list):
     if not str_ignore_user_name:
         logger.debug(f'str_except_user_name is empty')
         return list_user_names
