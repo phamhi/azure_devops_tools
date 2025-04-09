@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Azure DevOps User Deletion Tool
-Deletes users from an Azure DevOps organization based on a list of usernames from a CSV file
+Deletes users from an Azure DevOps organization based on a list of usernames from a text file
 """
 
 import os
@@ -43,12 +43,12 @@ def get_config(key: str, default: Optional[str] = None, required: bool = False) 
     # Return value or default
     return value or default
 
-def read_usernames_from_csv(file_path: str) -> List[str]:
+def read_usernames_from_file(file_path: str) -> List[str]:
     """
-    Read usernames from a CSV file
+    Read usernames from a text file (one username per line)
     
     Args:
-        file_path (str): Path to the CSV file
+        file_path (str): Path to the text file
         
     Returns:
         list: List of usernames
@@ -56,22 +56,16 @@ def read_usernames_from_csv(file_path: str) -> List[str]:
     usernames: List[str] = []
     try:
         with open(file_path, 'r') as f:
-            csv_reader = csv.reader(f)
-            # Skip header if it exists
-            header = next(csv_reader, None)
-            
-            if not header or header[0].lower() != "username":
-                # No header, reset file pointer
-                f.seek(0)
-            
-            for row in csv_reader:
-                if row and len(row) > 0:
-                    usernames.append(row[0])
+            for line in f:
+                # Strip whitespace and ignore empty lines
+                username = line.strip()
+                if username:
+                    usernames.append(username)
                     
         logger.debug(f"Read {len(usernames)} usernames from {file_path}")
         return usernames
     except Exception as e:
-        logger.error(f"Error reading CSV file {file_path}: {e}")
+        logger.error(f"Error reading file {file_path}: {e}")
         sys.exit(1)
 
 def get_user_id(org: str, token: str, username: str) -> Optional[str]:
@@ -222,11 +216,11 @@ def write_results_to_csv(results: List[Dict[str, str]], output_file: str) -> Non
 
 def main() -> None:
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Delete Azure DevOps users from a CSV file')
-    parser.add_argument('--input', required=True, help='Input file path containing usernames')
+    parser = argparse.ArgumentParser(description='Delete Azure DevOps users from a text file')
+    parser.add_argument('--input', required=True, help='Input file path containing usernames (one per line)')
     parser.add_argument('--output', help='Output file path for deletion results')
     parser.add_argument('--debug', action='store_true', help='Enable debug logging')
-    parser.add_argument('--dry-run', action='store_true', help='Dry run mode (no actual deletions)')
+    parser.add_argument('--no-dry-run', action='store_true', help='Execute actual deletions (default is dry run)')
     args: argparse.Namespace = parser.parse_args()
     
     # Set debug logging if requested
@@ -238,11 +232,13 @@ def main() -> None:
     token: str = get_config("ADO_TOKEN", required=True)
     org: str = get_config("ADO_ORG", required=True)
     
-    # Read usernames from CSV
-    usernames: List[str] = read_usernames_from_csv(args.input)
+    # Read usernames from file
+    usernames: List[str] = read_usernames_from_file(args.input)
     logger.info(f"Found {len(usernames)} usernames to process")
     
-    if args.dry_run:
+    # Default is dry run unless --no-dry-run is specified
+    dry_run = not args.no_dry_run
+    if dry_run:
         logger.info("DRY RUN MODE: No users will actually be deleted")
         results: List[Dict[str, str]] = []
         for username in usernames:
