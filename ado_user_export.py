@@ -71,8 +71,6 @@ def get_ado_users(org: str, token: str) -> dict:
     Returns:
         dict: User data retrieved from Azure DevOps API or error information
     """
-    url = f"{ADO_API_BASE_URL.format(org=org)}?{ADO_API_VERSION}"
-    
     # Create basic auth header with empty username and PAT as password
     auth_str = base64.b64encode(f":{token}".encode()).decode()
     headers = {
@@ -80,23 +78,56 @@ def get_ado_users(org: str, token: str) -> dict:
         "Authorization": f"Basic {auth_str}"
     }
     
-    logger.debug(f"Requesting users from {url}")
-    response = requests.get(url, headers=headers)
+    all_users = []
+    total_count = 0
+    page_size = 100  # Number of users to retrieve per request
+    skip = 0
     
-    if response.status_code != 200:
-        error_message = ""
-        if response.text:
-            error_message = response.text
+    while True:
+        # Add pagination parameters to URL
+        url = f"{ADO_API_BASE_URL.format(org=org)}?{ADO_API_VERSION}&$top={page_size}&$skip={skip}"
+        
+        logger.debug(f"Requesting users from {url}")
+        response = requests.get(url, headers=headers)
+        
+        if response.status_code != 200:
+            error_message = ""
+            if response.text:
+                error_message = response.text
+                
+            logger.error(f"API request failed with status code: {response.status_code}")
+            logger.error(f"Response: {error_message}")
             
-        logger.error(f"API request failed with status code: {response.status_code}")
-        logger.error(f"Response: {error_message}")
+            if response.status_code == 401:
+                logger.error("Authentication failed. Please check if your token is valid and has not expired.")
+            
+            return {"error": True, "status_code": response.status_code, "message": error_message}
         
-        if response.status_code == 401:
-            logger.error("Authentication failed. Please check if your token is valid and has not expired.")
+        # Parse response JSON
+        page_data = response.json()
+        page_items = page_data.get("items", [])
+        all_users.extend(page_items)
         
-        return {"error": True, "status_code": response.status_code, "message": error_message}
+        # Update total count from the first page
+        if skip == 0:
+            total_count = page_data.get("count", 0)
+            logger.info(f"Total users to retrieve: {total_count}")
+        
+        # Log progress
+        logger.info(f"Retrieved {len(all_users)} of {total_count} users")
+        
+        # Check if we've retrieved all users or if there are no more pages
+        if not page_items or len(all_users) >= total_count or len(page_items) < page_size:
+            break
+        
+        # Prepare for next page
+        skip += page_size
     
-    return response.json()
+    # Return combined results
+    return {
+        "count": len(all_users),
+        "items": all_users
+    }
 
 def filter_inactive_users(users_data: dict, days: int) -> dict:
     """
